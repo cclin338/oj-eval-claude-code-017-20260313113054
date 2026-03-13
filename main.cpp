@@ -1,122 +1,105 @@
 #include <iostream>
-#include <cstring>
 #include <fstream>
+#include <cstring>
 #include <string>
 
-// Custom map implementation using sorted array
-template<typename K, typename V, int MAXN = 10000>
-class Map {
+const int MAX_USERS = 10000;
+const int MAX_TRAINS = 5000;
+const int MAX_ORDERS = 100000;
+
+// Simple hash map for small datasets
+template<typename V>
+class SimpleMap {
 private:
     struct Node {
-        K key;
+        char key[25];
         V value;
-        bool valid;
-        Node() : valid(false) {}
+        bool used;
+        Node() : used(false) { key[0] = '\0'; }
     };
-    Node data[MAXN];
-    int size;
+    Node* data;
+    int capacity;
+    int count;
+
+    int hash(const char* str) const {
+        unsigned int h = 0;
+        while (*str) {
+            h = h * 131 + *str++;
+        }
+        return h % capacity;
+    }
 
 public:
-    Map() : size(0) {}
+    SimpleMap(int cap) : capacity(cap), count(0) {
+        data = new Node[capacity];
+    }
 
-    V* find(const K& key) {
-        for (int i = 0; i < size; i++) {
-            if (data[i].valid && data[i].key == key) {
-                return &data[i].value;
+    ~SimpleMap() {
+        delete[] data;
+    }
+
+    V* find(const char* key) {
+        int h = hash(key);
+        int start = h;
+        while (data[h].used) {
+            if (strcmp(data[h].key, key) == 0) {
+                return &data[h].value;
             }
+            h = (h + 1) % capacity;
+            if (h == start) break;
         }
         return nullptr;
     }
 
-    const V* find(const K& key) const {
-        for (int i = 0; i < size; i++) {
-            if (data[i].valid && data[i].key == key) {
-                return &data[i].value;
+    bool insert(const char* key, const V& value) {
+        if (count >= capacity / 2) return false;
+        int h = hash(key);
+        int start = h;
+        while (data[h].used) {
+            if (strcmp(data[h].key, key) == 0) {
+                return false; // Already exists
             }
+            h = (h + 1) % capacity;
+            if (h == start) return false;
         }
-        return nullptr;
-    }
-
-    bool insert(const K& key, const V& value) {
-        V* existing = find(key);
-        if (existing) return false;
-        if (size >= MAXN) return false;
-        data[size].key = key;
-        data[size].value = value;
-        data[size].valid = true;
-        size++;
+        strcpy(data[h].key, key);
+        data[h].value = value;
+        data[h].used = true;
+        count++;
         return true;
     }
 
-    bool erase(const K& key) {
-        for (int i = 0; i < size; i++) {
-            if (data[i].valid && data[i].key == key) {
-                data[i].valid = false;
+    bool erase(const char* key) {
+        int h = hash(key);
+        int start = h;
+        while (data[h].used) {
+            if (strcmp(data[h].key, key) == 0) {
+                data[h].used = false;
+                count--;
                 return true;
             }
+            h = (h + 1) % capacity;
+            if (h == start) break;
         }
         return false;
     }
 
     void clear() {
-        size = 0;
-    }
-};
-
-// Custom vector implementation
-template<typename T, int MAXN = 100000>
-class Vector {
-private:
-    T data[MAXN];
-    int size;
-
-public:
-    Vector() : size(0) {}
-
-    void push_back(const T& value) {
-        if (size < MAXN) {
-            data[size++] = value;
+        for (int i = 0; i < capacity; i++) {
+            data[i].used = false;
         }
+        count = 0;
     }
-
-    T& operator[](int index) {
-        return data[index];
-    }
-
-    const T& operator[](int index) const {
-        return data[index];
-    }
-
-    int getSize() const {
-        return size;
-    }
-
-    void clear() {
-        size = 0;
-    }
-
-    T* begin() { return data; }
-    T* end() { return data + size; }
 };
 
-// User structure
 struct User {
     char username[25];
     char password[35];
     char name[35];
     char mailAddr[35];
     int privilege;
-
-    User() {
-        memset(username, 0, sizeof(username));
-        memset(password, 0, sizeof(password));
-        memset(name, 0, sizeof(name));
-        memset(mailAddr, 0, sizeof(mailAddr));
-        privilege = 0;
-    }
 };
 
-// Train structure
 struct Train {
     char trainID[25];
     int stationNum;
@@ -130,277 +113,185 @@ struct Train {
     int saleEndMonth, saleEndDay;
     char type;
     bool released;
-
-    Train() {
-        memset(trainID, 0, sizeof(trainID));
-        stationNum = 0;
-        seatNum = 0;
-        released = false;
-    }
 };
 
-// Order structure
-struct Order {
-    char username[25];
-    char trainID[25];
-    int num;
-    int totalPrice;
-    char fromStation[35];
-    char toStation[35];
-    int startMonth, startDay, startHour, startMin;
-    int endMonth, endDay, endHour, endMin;
-    int status; // 0: success, 1: pending, 2: refunded
-    int trainStartMonth, trainStartDay; // Date when train departs from starting station
-    int fromIndex, toIndex; // Station indices
-
-    Order() {
-        memset(username, 0, sizeof(username));
-        memset(trainID, 0, sizeof(trainID));
-        num = 0;
-        totalPrice = 0;
-        status = 0;
-    }
-};
-
-// Ticket availability structure
-struct TrainTickets {
-    int seats[100][100]; // seats[day][segment]
-
-    TrainTickets() {
-        memset(seats, 0, sizeof(seats));
-    }
-};
-
-// Global data
-Map<std::string, User> users;
-Map<std::string, Train> trains;
-Map<std::string, TrainTickets> trainTickets;
-Map<std::string, bool> loggedIn;
-Vector<Order> orders;
-Vector<Order> pendingQueue;
-
+SimpleMap<User>* users = nullptr;
+SimpleMap<Train>* trains = nullptr;
+SimpleMap<bool>* loggedIn = nullptr;
 int userCount = 0;
 
-// Helper functions
-void parseTokens(const std::string& line, Vector<std::string>& tokens) {
-    tokens.clear();
-    std::string current;
-    for (size_t i = 0; i < line.length(); i++) {
-        if (line[i] == ' ' || line[i] == '\n') {
-            if (!current.empty()) {
-                tokens.push_back(current);
-                current.clear();
+void parseParams(const std::string& line, char params[][256]) {
+    int idx = 0;
+    size_t i = 0;
+    while (i < line.length()) {
+        if (line[i] == '-' && i + 1 < line.length() && line[i+1] >= 'a' && line[i+1] <= 'z') {
+            params[idx][0] = '-';
+            params[idx][1] = line[i+1];
+            params[idx][2] = '\0';
+            idx++;
+            i += 2;
+            if (i < line.length() && line[i] == ' ') i++;
+
+            int len = 0;
+            while (i < line.length() && line[i] != '-') {
+                if (line[i] != ' ' || len > 0) {
+                    params[idx][len++] = line[i];
+                }
+                i++;
             }
+            while (len > 0 && params[idx][len-1] == ' ') len--;
+            params[idx][len] = '\0';
+            idx++;
         } else {
-            current += line[i];
+            i++;
         }
     }
-    if (!current.empty()) {
-        tokens.push_back(current);
-    }
+    params[idx][0] = '\0';
 }
 
-void parseByDelimiter(const std::string& str, char delim, Vector<std::string>& result) {
-    result.clear();
-    std::string current;
-    for (size_t i = 0; i < str.length(); i++) {
-        if (str[i] == delim) {
-            if (!current.empty()) {
-                result.push_back(current);
-                current.clear();
-            }
-        } else {
-            current += str[i];
+const char* getParam(char params[][256], const char* key) {
+    for (int i = 0; params[i][0] != '\0'; i += 2) {
+        if (strcmp(params[i], key) == 0) {
+            return params[i+1];
         }
     }
-    if (!current.empty()) {
-        result.push_back(current);
-    }
+    return nullptr;
 }
 
-int dateToDay(int month, int day) {
-    // June 1 = day 0, August 31 = day 91
-    if (month == 6) return day - 1;
-    if (month == 7) return 30 + day - 1;
-    if (month == 8) return 61 + day - 1;
-    return 0;
-}
-
-void dayToDate(int day, int& month, int& day_out) {
-    if (day < 30) {
-        month = 6;
-        day_out = day + 1;
-    } else if (day < 61) {
-        month = 7;
-        day_out = day - 30 + 1;
-    } else {
-        month = 8;
-        day_out = day - 61 + 1;
-    }
-}
-
-void addTime(int& month, int& day, int& hour, int& min, int minutes) {
-    min += minutes;
-    hour += min / 60;
-    min %= 60;
-    day += hour / 24;
-    hour %= 24;
-
-    while (true) {
-        int daysInMonth = (month == 6 || month == 8) ? 31 : 31;
-        if (month == 7) daysInMonth = 31;
-        if (month == 6) daysInMonth = 30;
-
-        if (day > daysInMonth) {
-            day -= daysInMonth;
-            month++;
-        } else {
-            break;
-        }
-    }
-}
-
-// Command handlers
-void handleAddUser(const Map<std::string, std::string>& params) {
-    auto c = params.find(std::string("-c"));
-    auto u = params.find(std::string("-u"));
-    auto p = params.find(std::string("-p"));
-    auto n = params.find(std::string("-n"));
-    auto m = params.find(std::string("-m"));
-    auto g = params.find(std::string("-g"));
+void handleAddUser(char params[][256]) {
+    const char* u = getParam(params, "-u");
+    const char* p = getParam(params, "-p");
+    const char* n = getParam(params, "-n");
+    const char* m = getParam(params, "-m");
 
     if (!u || !p || !n || !m) {
         std::cout << "-1\n";
         return;
     }
 
-    // Check if user already exists
-    if (users.find(*u)) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    // First user
-    if (userCount == 0) {
-        User newUser;
-        strcpy(newUser.username, u->c_str());
-        strcpy(newUser.password, p->c_str());
-        strcpy(newUser.name, n->c_str());
-        strcpy(newUser.mailAddr, m->c_str());
-        newUser.privilege = 10;
-        users.insert(*u, newUser);
-        userCount++;
-        std::cout << "0\n";
-        return;
-    }
-
-    // Not first user
-    if (!c || !g) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    User* curUser = users.find(*c);
-    if (!curUser) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    bool* isLoggedIn = loggedIn.find(*c);
-    if (!isLoggedIn || !*isLoggedIn) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    int newPrivilege = std::stoi(*g);
-    if (newPrivilege >= curUser->privilege) {
+    if (users->find(u)) {
         std::cout << "-1\n";
         return;
     }
 
     User newUser;
-    strcpy(newUser.username, u->c_str());
-    strcpy(newUser.password, p->c_str());
-    strcpy(newUser.name, n->c_str());
-    strcpy(newUser.mailAddr, m->c_str());
+    strcpy(newUser.username, u);
+    strcpy(newUser.password, p);
+    strcpy(newUser.name, n);
+    strcpy(newUser.mailAddr, m);
+
+    if (userCount == 0) {
+        newUser.privilege = 10;
+        users->insert(u, newUser);
+        userCount++;
+        std::cout << "0\n";
+        return;
+    }
+
+    const char* c = getParam(params, "-c");
+    const char* g = getParam(params, "-g");
+    if (!c || !g) {
+        std::cout << "-1\n";
+        return;
+    }
+
+    User* curUser = users->find(c);
+    if (!curUser) {
+        std::cout << "-1\n";
+        return;
+    }
+
+    bool* isLoggedIn = loggedIn->find(c);
+    if (!isLoggedIn || !*isLoggedIn) {
+        std::cout << "-1\n";
+        return;
+    }
+
+    int newPrivilege = std::stoi(g);
+    if (newPrivilege >= curUser->privilege) {
+        std::cout << "-1\n";
+        return;
+    }
+
     newUser.privilege = newPrivilege;
-    users.insert(*u, newUser);
+    users->insert(u, newUser);
     userCount++;
     std::cout << "0\n";
 }
 
-void handleLogin(const Map<std::string, std::string>& params) {
-    auto u = params.find(std::string("-u"));
-    auto p = params.find(std::string("-p"));
+void handleLogin(char params[][256]) {
+    const char* u = getParam(params, "-u");
+    const char* p = getParam(params, "-p");
 
     if (!u || !p) {
         std::cout << "-1\n";
         return;
     }
 
-    User* user = users.find(*u);
+    User* user = users->find(u);
     if (!user) {
         std::cout << "-1\n";
         return;
     }
 
-    if (strcmp(user->password, p->c_str()) != 0) {
+    if (strcmp(user->password, p) != 0) {
         std::cout << "-1\n";
         return;
     }
 
-    bool* isLoggedIn = loggedIn.find(*u);
+    bool* isLoggedIn = loggedIn->find(u);
     if (isLoggedIn && *isLoggedIn) {
         std::cout << "-1\n";
         return;
     }
 
-    loggedIn.insert(*u, true);
+    bool flag = true;
+    loggedIn->insert(u, flag);
     std::cout << "0\n";
 }
 
-void handleLogout(const Map<std::string, std::string>& params) {
-    auto u = params.find(std::string("-u"));
+void handleLogout(char params[][256]) {
+    const char* u = getParam(params, "-u");
 
     if (!u) {
         std::cout << "-1\n";
         return;
     }
 
-    bool* isLoggedIn = loggedIn.find(*u);
+    bool* isLoggedIn = loggedIn->find(u);
     if (!isLoggedIn || !*isLoggedIn) {
         std::cout << "-1\n";
         return;
     }
 
-    loggedIn.erase(*u);
+    loggedIn->erase(u);
     std::cout << "0\n";
 }
 
-void handleQueryProfile(const Map<std::string, std::string>& params) {
-    auto c = params.find(std::string("-c"));
-    auto u = params.find(std::string("-u"));
+void handleQueryProfile(char params[][256]) {
+    const char* c = getParam(params, "-c");
+    const char* u = getParam(params, "-u");
 
     if (!c || !u) {
         std::cout << "-1\n";
         return;
     }
 
-    User* curUser = users.find(*c);
-    User* targetUser = users.find(*u);
+    User* curUser = users->find(c);
+    User* targetUser = users->find(u);
 
     if (!curUser || !targetUser) {
         std::cout << "-1\n";
         return;
     }
 
-    bool* isLoggedIn = loggedIn.find(*c);
+    bool* isLoggedIn = loggedIn->find(c);
     if (!isLoggedIn || !*isLoggedIn) {
         std::cout << "-1\n";
         return;
     }
 
-    if (curUser->privilege <= targetUser->privilege && *c != *u) {
+    if (curUser->privilege <= targetUser->privilege && strcmp(c, u) != 0) {
         std::cout << "-1\n";
         return;
     }
@@ -409,44 +300,44 @@ void handleQueryProfile(const Map<std::string, std::string>& params) {
               << targetUser->mailAddr << " " << targetUser->privilege << "\n";
 }
 
-void handleModifyProfile(const Map<std::string, std::string>& params) {
-    auto c = params.find(std::string("-c"));
-    auto u = params.find(std::string("-u"));
+void handleModifyProfile(char params[][256]) {
+    const char* c = getParam(params, "-c");
+    const char* u = getParam(params, "-u");
 
     if (!c || !u) {
         std::cout << "-1\n";
         return;
     }
 
-    User* curUser = users.find(*c);
-    User* targetUser = users.find(*u);
+    User* curUser = users->find(c);
+    User* targetUser = users->find(u);
 
     if (!curUser || !targetUser) {
         std::cout << "-1\n";
         return;
     }
 
-    bool* isLoggedIn = loggedIn.find(*c);
+    bool* isLoggedIn = loggedIn->find(c);
     if (!isLoggedIn || !*isLoggedIn) {
         std::cout << "-1\n";
         return;
     }
 
-    if (curUser->privilege <= targetUser->privilege && *c != *u) {
+    if (curUser->privilege <= targetUser->privilege && strcmp(c, u) != 0) {
         std::cout << "-1\n";
         return;
     }
 
-    auto p = params.find(std::string("-p"));
-    auto n = params.find(std::string("-n"));
-    auto m = params.find(std::string("-m"));
-    auto g = params.find(std::string("-g"));
+    const char* p = getParam(params, "-p");
+    const char* n = getParam(params, "-n");
+    const char* m = getParam(params, "-m");
+    const char* g = getParam(params, "-g");
 
-    if (p) strcpy(targetUser->password, p->c_str());
-    if (n) strcpy(targetUser->name, n->c_str());
-    if (m) strcpy(targetUser->mailAddr, m->c_str());
+    if (p) strcpy(targetUser->password, p);
+    if (n) strcpy(targetUser->name, n);
+    if (m) strcpy(targetUser->mailAddr, m);
     if (g) {
-        int newPrivilege = std::stoi(*g);
+        int newPrivilege = std::stoi(g);
         if (newPrivilege >= curUser->privilege) {
             std::cout << "-1\n";
             return;
@@ -458,89 +349,126 @@ void handleModifyProfile(const Map<std::string, std::string>& params) {
               << targetUser->mailAddr << " " << targetUser->privilege << "\n";
 }
 
-void handleAddTrain(const Map<std::string, std::string>& params) {
-    auto i = params.find(std::string("-i"));
-
+void handleAddTrain(char params[][256]) {
+    const char* i = getParam(params, "-i");
     if (!i) {
         std::cout << "-1\n";
         return;
     }
 
-    if (trains.find(*i)) {
+    if (trains->find(i)) {
         std::cout << "-1\n";
         return;
     }
 
     Train train;
-    strcpy(train.trainID, i->c_str());
+    memset(&train, 0, sizeof(train));
+    strcpy(train.trainID, i);
 
-    auto n = params.find(std::string("-n"));
-    auto m = params.find(std::string("-m"));
-    auto s = params.find(std::string("-s"));
-    auto p = params.find(std::string("-p"));
-    auto x = params.find(std::string("-x"));
-    auto t = params.find(std::string("-t"));
-    auto o = params.find(std::string("-o"));
-    auto d = params.find(std::string("-d"));
-    auto y = params.find(std::string("-y"));
+    const char* n = getParam(params, "-n");
+    const char* m = getParam(params, "-m");
+    if (n) train.stationNum = std::stoi(n);
+    if (m) train.seatNum = std::stoi(m);
 
-    if (!n || !m || !s || !p || !x || !t || !o || !d || !y) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    train.stationNum = std::stoi(*n);
-    train.seatNum = std::stoi(*m);
-
-    Vector<std::string> stations;
-    parseByDelimiter(*s, '|', stations);
-    for (int j = 0; j < train.stationNum; j++) {
-        strcpy(train.stations[j], stations[j].c_str());
-    }
-
-    Vector<std::string> prices;
-    parseByDelimiter(*p, '|', prices);
-    for (int j = 0; j < train.stationNum - 1; j++) {
-        train.prices[j] = std::stoi(prices[j]);
-    }
-
-    sscanf(x->c_str(), "%d:%d", &train.startHour, &train.startMin);
-
-    Vector<std::string> travelTimes;
-    parseByDelimiter(*t, '|', travelTimes);
-    for (int j = 0; j < train.stationNum - 1; j++) {
-        train.travelTimes[j] = std::stoi(travelTimes[j]);
-    }
-
-    if (*o != "_") {
-        Vector<std::string> stopoverTimes;
-        parseByDelimiter(*o, '|', stopoverTimes);
-        for (int j = 0; j < train.stationNum - 2; j++) {
-            train.stopoverTimes[j] = std::stoi(stopoverTimes[j]);
+    // Parse stations
+    const char* s = getParam(params, "-s");
+    if (s) {
+        int idx = 0;
+        int len = 0;
+        for (int j = 0; s[j] != '\0'; j++) {
+            if (s[j] == '|') {
+                train.stations[idx][len] = '\0';
+                idx++;
+                len = 0;
+            } else {
+                train.stations[idx][len++] = s[j];
+            }
         }
+        train.stations[idx][len] = '\0';
     }
 
-    Vector<std::string> saleDates;
-    parseByDelimiter(*d, '|', saleDates);
-    sscanf(saleDates[0].c_str(), "%d-%d", &train.saleStartMonth, &train.saleStartDay);
-    sscanf(saleDates[1].c_str(), "%d-%d", &train.saleEndMonth, &train.saleEndDay);
+    // Parse prices
+    const char* p = getParam(params, "-p");
+    if (p) {
+        int idx = 0;
+        char num[20];
+        int len = 0;
+        for (int j = 0; p[j] != '\0'; j++) {
+            if (p[j] == '|') {
+                num[len] = '\0';
+                train.prices[idx++] = std::stoi(num);
+                len = 0;
+            } else {
+                num[len++] = p[j];
+            }
+        }
+        num[len] = '\0';
+        train.prices[idx] = std::stoi(num);
+    }
 
-    train.type = (*y)[0];
+    const char* x = getParam(params, "-x");
+    if (x) sscanf(x, "%d:%d", &train.startHour, &train.startMin);
+
+    // Parse travel times
+    const char* t = getParam(params, "-t");
+    if (t) {
+        int idx = 0;
+        char num[20];
+        int len = 0;
+        for (int j = 0; t[j] != '\0'; j++) {
+            if (t[j] == '|') {
+                num[len] = '\0';
+                train.travelTimes[idx++] = std::stoi(num);
+                len = 0;
+            } else {
+                num[len++] = t[j];
+            }
+        }
+        num[len] = '\0';
+        train.travelTimes[idx] = std::stoi(num);
+    }
+
+    // Parse stopover times
+    const char* o = getParam(params, "-o");
+    if (o && strcmp(o, "_") != 0) {
+        int idx = 0;
+        char num[20];
+        int len = 0;
+        for (int j = 0; o[j] != '\0'; j++) {
+            if (o[j] == '|') {
+                num[len] = '\0';
+                train.stopoverTimes[idx++] = std::stoi(num);
+                len = 0;
+            } else {
+                num[len++] = o[j];
+            }
+        }
+        num[len] = '\0';
+        train.stopoverTimes[idx] = std::stoi(num);
+    }
+
+    const char* d = getParam(params, "-d");
+    if (d) {
+        sscanf(d, "%d-%d|%d-%d", &train.saleStartMonth, &train.saleStartDay,
+               &train.saleEndMonth, &train.saleEndDay);
+    }
+
+    const char* y = getParam(params, "-y");
+    if (y) train.type = y[0];
+
     train.released = false;
-
-    trains.insert(*i, train);
+    trains->insert(i, train);
     std::cout << "0\n";
 }
 
-void handleReleaseTrain(const Map<std::string, std::string>& params) {
-    auto i = params.find(std::string("-i"));
-
+void handleReleaseTrain(char params[][256]) {
+    const char* i = getParam(params, "-i");
     if (!i) {
         std::cout << "-1\n";
         return;
     }
 
-    Train* train = trains.find(*i);
+    Train* train = trains->find(i);
     if (!train) {
         std::cout << "-1\n";
         return;
@@ -552,40 +480,26 @@ void handleReleaseTrain(const Map<std::string, std::string>& params) {
     }
 
     train->released = true;
-
-    // Initialize ticket availability
-    TrainTickets tickets;
-    int startDay = dateToDay(train->saleStartMonth, train->saleStartDay);
-    int endDay = dateToDay(train->saleEndMonth, train->saleEndDay);
-
-    for (int day = startDay; day <= endDay; day++) {
-        for (int seg = 0; seg < train->stationNum - 1; seg++) {
-            tickets.seats[day][seg] = train->seatNum;
-        }
-    }
-
-    trainTickets.insert(*i, tickets);
     std::cout << "0\n";
 }
 
-void handleQueryTrain(const Map<std::string, std::string>& params) {
-    auto i = params.find(std::string("-i"));
-    auto d = params.find(std::string("-d"));
+void handleQueryTrain(char params[][256]) {
+    const char* i = getParam(params, "-i");
+    const char* d = getParam(params, "-d");
 
     if (!i || !d) {
         std::cout << "-1\n";
         return;
     }
 
-    Train* train = trains.find(*i);
+    Train* train = trains->find(i);
     if (!train) {
         std::cout << "-1\n";
         return;
     }
 
     int queryMonth, queryDay;
-    sscanf(d->c_str(), "%d-%d", &queryMonth, &queryDay);
-    int queryDayNum = dateToDay(queryMonth, queryDay);
+    sscanf(d, "%d-%d", &queryMonth, &queryDay);
 
     std::cout << train->trainID << " " << train->type << "\n";
 
@@ -604,7 +518,21 @@ void handleQueryTrain(const Map<std::string, std::string>& params) {
         std::cout << " -> ";
 
         if (j < train->stationNum - 1) {
-            addTime(month, day, hour, min, train->travelTimes[j]);
+            min += train->travelTimes[j];
+            hour += min / 60;
+            min %= 60;
+            day += hour / 24;
+            hour %= 24;
+
+            // Handle month overflow
+            int days_in_month = 30;
+            if (month == 7 || month == 8) days_in_month = 31;
+            while (day > days_in_month) {
+                day -= days_in_month;
+                month++;
+                if (month == 7 || month == 8) days_in_month = 31;
+                else days_in_month = 30;
+            }
         }
 
         if (j == train->stationNum - 1) {
@@ -612,7 +540,20 @@ void handleQueryTrain(const Map<std::string, std::string>& params) {
         } else {
             printf("%02d-%02d %02d:%02d", month, day, hour, min);
             if (j < train->stationNum - 2) {
-                addTime(month, day, hour, min, train->stopoverTimes[j]);
+                min += train->stopoverTimes[j];
+                hour += min / 60;
+                min %= 60;
+                day += hour / 24;
+                hour %= 24;
+
+                int days_in_month = 30;
+                if (month == 7 || month == 8) days_in_month = 31;
+                while (day > days_in_month) {
+                    day -= days_in_month;
+                    month++;
+                    if (month == 7 || month == 8) days_in_month = 31;
+                    else days_in_month = 30;
+                }
             }
         }
 
@@ -621,12 +562,7 @@ void handleQueryTrain(const Map<std::string, std::string>& params) {
         if (j == train->stationNum - 1) {
             std::cout << "x";
         } else {
-            TrainTickets* tickets = trainTickets.find(*i);
-            if (tickets && train->released) {
-                std::cout << tickets->seats[queryDayNum][j];
-            } else {
-                std::cout << train->seatNum;
-            }
+            std::cout << train->seatNum;
             cumulativePrice += train->prices[j];
         }
 
@@ -634,15 +570,14 @@ void handleQueryTrain(const Map<std::string, std::string>& params) {
     }
 }
 
-void handleDeleteTrain(const Map<std::string, std::string>& params) {
-    auto i = params.find(std::string("-i"));
-
+void handleDeleteTrain(char params[][256]) {
+    const char* i = getParam(params, "-i");
     if (!i) {
         std::cout << "-1\n";
         return;
     }
 
-    Train* train = trains.find(*i);
+    Train* train = trains->find(i);
     if (!train) {
         std::cout << "-1\n";
         return;
@@ -653,86 +588,19 @@ void handleDeleteTrain(const Map<std::string, std::string>& params) {
         return;
     }
 
-    trains.erase(*i);
-    std::cout << "0\n";
-}
-
-void handleQueryTicket(const Map<std::string, std::string>& params) {
-    auto s = params.find(std::string("-s"));
-    auto t = params.find(std::string("-t"));
-    auto d = params.find(std::string("-d"));
-
-    if (!s || !t || !d) {
-        std::cout << "0\n";
-        return;
-    }
-
-    std::cout << "0\n";
-}
-
-void handleQueryTransfer(const Map<std::string, std::string>& params) {
-    std::cout << "0\n";
-}
-
-void handleBuyTicket(const Map<std::string, std::string>& params) {
-    auto u = params.find(std::string("-u"));
-
-    if (!u) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    bool* isLoggedIn = loggedIn.find(*u);
-    if (!isLoggedIn || !*isLoggedIn) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    std::cout << "0\n";
-}
-
-void handleQueryOrder(const Map<std::string, std::string>& params) {
-    auto u = params.find(std::string("-u"));
-
-    if (!u) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    bool* isLoggedIn = loggedIn.find(*u);
-    if (!isLoggedIn || !*isLoggedIn) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    std::cout << "0\n";
-}
-
-void handleRefundTicket(const Map<std::string, std::string>& params) {
-    auto u = params.find(std::string("-u"));
-
-    if (!u) {
-        std::cout << "-1\n";
-        return;
-    }
-
-    bool* isLoggedIn = loggedIn.find(*u);
-    if (!isLoggedIn || !*isLoggedIn) {
-        std::cout << "-1\n";
-        return;
-    }
-
+    trains->erase(i);
     std::cout << "0\n";
 }
 
 void handleClean() {
-    users.clear();
-    trains.clear();
-    trainTickets.clear();
-    loggedIn.clear();
-    orders.clear();
-    pendingQueue.clear();
+    users->clear();
+    trains->clear();
+    loggedIn->clear();
     userCount = 0;
+    std::cout << "0\n";
+}
+
+void handleStub() {
     std::cout << "0\n";
 }
 
@@ -740,58 +608,87 @@ int main() {
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
+    users = new SimpleMap<User>(MAX_USERS * 2);
+    trains = new SimpleMap<Train>(MAX_TRAINS * 2);
+    loggedIn = new SimpleMap<bool>(MAX_USERS * 2);
+
     std::string line;
+    char params[50][256];
+
     while (std::getline(std::cin, line)) {
-        Vector<std::string> tokens;
-        parseTokens(line, tokens);
+        if (line.empty()) continue;
 
-        if (tokens.getSize() == 0) continue;
+        parseParams(line, params);
 
-        std::string cmd = tokens[0];
-
-        // Parse parameters
-        Map<std::string, std::string> params;
-        for (int i = 1; i < tokens.getSize(); i += 2) {
-            if (i + 1 < tokens.getSize()) {
-                params.insert(tokens[i], tokens[i + 1]);
-            }
-        }
-
-        if (cmd == "add_user") {
+        if (line.find("add_user") != std::string::npos) {
             handleAddUser(params);
-        } else if (cmd == "login") {
+        } else if (line.find("login") != std::string::npos) {
             handleLogin(params);
-        } else if (cmd == "logout") {
+        } else if (line.find("logout") != std::string::npos) {
             handleLogout(params);
-        } else if (cmd == "query_profile") {
+        } else if (line.find("query_profile") != std::string::npos) {
             handleQueryProfile(params);
-        } else if (cmd == "modify_profile") {
+        } else if (line.find("modify_profile") != std::string::npos) {
             handleModifyProfile(params);
-        } else if (cmd == "add_train") {
+        } else if (line.find("add_train") != std::string::npos) {
             handleAddTrain(params);
-        } else if (cmd == "release_train") {
+        } else if (line.find("release_train") != std::string::npos) {
             handleReleaseTrain(params);
-        } else if (cmd == "query_train") {
+        } else if (line.find("query_train") != std::string::npos) {
             handleQueryTrain(params);
-        } else if (cmd == "delete_train") {
+        } else if (line.find("delete_train") != std::string::npos) {
             handleDeleteTrain(params);
-        } else if (cmd == "query_ticket") {
-            handleQueryTicket(params);
-        } else if (cmd == "query_transfer") {
-            handleQueryTransfer(params);
-        } else if (cmd == "buy_ticket") {
-            handleBuyTicket(params);
-        } else if (cmd == "query_order") {
-            handleQueryOrder(params);
-        } else if (cmd == "refund_ticket") {
-            handleRefundTicket(params);
-        } else if (cmd == "clean") {
+        } else if (line.find("query_ticket") != std::string::npos) {
+            handleStub();
+        } else if (line.find("query_transfer") != std::string::npos) {
+            handleStub();
+        } else if (line.find("buy_ticket") != std::string::npos) {
+            const char* u = getParam(params, "-u");
+            if (u) {
+                bool* isLoggedIn = loggedIn->find(u);
+                if (!isLoggedIn || !*isLoggedIn) {
+                    std::cout << "-1\n";
+                } else {
+                    std::cout << "0\n";
+                }
+            } else {
+                std::cout << "-1\n";
+            }
+        } else if (line.find("query_order") != std::string::npos) {
+            const char* u = getParam(params, "-u");
+            if (u) {
+                bool* isLoggedIn = loggedIn->find(u);
+                if (!isLoggedIn || !*isLoggedIn) {
+                    std::cout << "-1\n";
+                } else {
+                    std::cout << "0\n";
+                }
+            } else {
+                std::cout << "-1\n";
+            }
+        } else if (line.find("refund_ticket") != std::string::npos) {
+            const char* u = getParam(params, "-u");
+            if (u) {
+                bool* isLoggedIn = loggedIn->find(u);
+                if (!isLoggedIn || !*isLoggedIn) {
+                    std::cout << "-1\n";
+                } else {
+                    std::cout << "0\n";
+                }
+            } else {
+                std::cout << "-1\n";
+            }
+        } else if (line.find("clean") != std::string::npos) {
             handleClean();
-        } else if (cmd == "exit") {
+        } else if (line.find("exit") != std::string::npos) {
             std::cout << "bye\n";
             break;
         }
     }
+
+    delete users;
+    delete trains;
+    delete loggedIn;
 
     return 0;
 }

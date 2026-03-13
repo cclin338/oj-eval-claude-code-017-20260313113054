@@ -133,10 +133,18 @@ void parseParams(const std::string& line, char params[][256]) {
             if (i < line.length() && line[i] == ' ') i++;
 
             int len = 0;
-            while (i < line.length() && line[i] != '-') {
-                if (line[i] != ' ' || len > 0) {
-                    params[idx][len++] = line[i];
+            while (i < line.length()) {
+                // Check if this is a new parameter (- followed by letter)
+                if (line[i] == '-' && i + 1 < line.length() && line[i+1] >= 'a' && line[i+1] <= 'z') {
+                    break;
                 }
+                // Check if we're at a space at the beginning
+                if (line[i] == ' ' && len == 0) {
+                    i++;
+                    continue;
+                }
+                // Add character to value
+                params[idx][len++] = line[i];
                 i++;
             }
             while (len > 0 && params[idx][len-1] == ' ') len--;
@@ -504,61 +512,77 @@ void handleQueryTrain(char params[][256]) {
     std::cout << train->trainID << " " << train->type << "\n";
 
     int cumulativePrice = 0;
-    int month = queryMonth, day = queryDay, hour = train->startHour, min = train->startMin;
+    int arrivalMinutes = 0; // Minutes from start station departure to arrival at current station
 
     for (int j = 0; j < train->stationNum; j++) {
         std::cout << train->stations[j] << " ";
 
+        // Calculate arrival time at this station
+        int arrMin = train->startMin + arrivalMinutes;
+        int arrHour = train->startHour + arrMin / 60;
+        arrMin %= 60;
+        int arrDayOffset = arrHour / 24;
+        arrHour %= 24;
+
+        // Calculate actual calendar date
+        int arrDay = queryDay + arrDayOffset;
+        int arrMonth = queryMonth;
+        if (arrMonth == 6 && arrDay > 30) {
+            arrDay -= 30;
+            arrMonth = 7;
+        }
+        if (arrMonth == 7 && arrDay > 31) {
+            arrDay -= 31;
+            arrMonth = 8;
+        }
+
+        // Print arrival time
         if (j == 0) {
             std::cout << "xx-xx xx:xx";
         } else {
-            printf("%02d-%02d %02d:%02d", month, day, hour, min);
+            char buf[20];
+            sprintf(buf, "%02d-%02d %02d:%02d", arrMonth, arrDay, arrHour, arrMin);
+            std::cout << buf;
         }
 
         std::cout << " -> ";
 
-        if (j < train->stationNum - 1) {
-            min += train->travelTimes[j];
-            hour += min / 60;
-            min %= 60;
-            day += hour / 24;
-            hour %= 24;
+        // Calculate departure time (arrival + stopover for middle stations)
+        int depMin = arrMin;
+        int depHour = arrHour;
+        int depDayOffset = arrDayOffset;
 
-            // Handle month overflow
-            int days_in_month = 30;
-            if (month == 7 || month == 8) days_in_month = 31;
-            while (day > days_in_month) {
-                day -= days_in_month;
-                month++;
-                if (month == 7 || month == 8) days_in_month = 31;
-                else days_in_month = 30;
-            }
+        if (j > 0 && j < train->stationNum - 1) {
+            depMin += train->stopoverTimes[j-1];
+            depHour += depMin / 60;
+            depMin %= 60;
+            depDayOffset += depHour / 24;
+            depHour %= 24;
         }
 
+        int depDay = queryDay + depDayOffset;
+        int depMonth = queryMonth;
+        if (depMonth == 6 && depDay > 30) {
+            depDay -= 30;
+            depMonth = 7;
+        }
+        if (depMonth == 7 && depDay > 31) {
+            depDay -= 31;
+            depMonth = 8;
+        }
+
+        // Print departure time
         if (j == train->stationNum - 1) {
             std::cout << "xx-xx xx:xx";
         } else {
-            printf("%02d-%02d %02d:%02d", month, day, hour, min);
-            if (j < train->stationNum - 2) {
-                min += train->stopoverTimes[j];
-                hour += min / 60;
-                min %= 60;
-                day += hour / 24;
-                hour %= 24;
-
-                int days_in_month = 30;
-                if (month == 7 || month == 8) days_in_month = 31;
-                while (day > days_in_month) {
-                    day -= days_in_month;
-                    month++;
-                    if (month == 7 || month == 8) days_in_month = 31;
-                    else days_in_month = 30;
-                }
-            }
+            char buf[20];
+            sprintf(buf, "%02d-%02d %02d:%02d", depMonth, depDay, depHour, depMin);
+            std::cout << buf;
         }
 
         std::cout << " " << cumulativePrice << " ";
 
+        // Print remaining seats
         if (j == train->stationNum - 1) {
             std::cout << "x";
         } else {
@@ -567,6 +591,16 @@ void handleQueryTrain(char params[][256]) {
         }
 
         std::cout << "\n";
+
+        // Update arrival time for next station
+        if (j < train->stationNum - 1) {
+            // Next arrival = current departure + travel time
+            int departureMinutes = arrivalMinutes;
+            if (j > 0) {
+                departureMinutes += train->stopoverTimes[j-1];
+            }
+            arrivalMinutes = departureMinutes + train->travelTimes[j];
+        }
     }
 }
 

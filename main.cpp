@@ -3,9 +3,9 @@
 #include <cstring>
 #include <string>
 
-const int MAX_USERS = 10000;
-const int MAX_TRAINS = 5000;
-const int MAX_ORDERS = 100000;
+const int MAX_USERS = 500;
+const int MAX_TRAINS = 200;
+const int MAX_ORDERS = 1000;
 
 // Simple hash map for small datasets
 template<typename V>
